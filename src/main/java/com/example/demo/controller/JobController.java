@@ -4,6 +4,7 @@ import com.example.demo.model.JobPosting;
 import com.example.demo.model.User;
 import com.example.demo.payload.JobRequest;
 import com.example.demo.payload.JobResponse;
+import com.example.demo.payload.UpdateJobRequest;
 import com.example.demo.repository.JobRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.security.JwtUtil;
@@ -117,5 +118,32 @@ public class JobController {
         jobRepository.delete(job);
         return ResponseEntity.ok("Job deleted successfully.");
     }
+    @PutMapping("/employer/jobs/{id}")
+    public ResponseEntity<?> updateJob(
+            @PathVariable Long id,
+            @RequestBody UpdateJobRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        User employer = extractUserFromToken(httpRequest);
+
+        JobPosting job = jobRepository.findById(id).orElse(null);
+
+        if (job == null) {
+            return ResponseEntity.status(404).body("Job not found.");
+        }
+
+        if (!job.getEmployer().getId().equals(employer.getId())) {
+            return ResponseEntity.status(403).body("You are not allowed to update this job.");
+        }
+
+        // Apply updates
+        if (request.getTitle() != null) job.setTitle(request.getTitle());
+        if (request.getDescription() != null) job.setDescription(request.getDescription());
+        if (request.getLocation() != null) job.setLocation(request.getLocation());
+
+        jobRepository.save(job);
+        return ResponseEntity.ok("Job updated successfully.");
+    }
+
 
 }
