@@ -1,10 +1,14 @@
 package com.example.demo.controller;
 
+import com.example.demo.model.JobApplication;
 import com.example.demo.model.JobPosting;
 import com.example.demo.model.User;
+import com.example.demo.payload.ApplyRequest;
+import com.example.demo.payload.JobApplicationResponse;
 import com.example.demo.payload.JobRequest;
 import com.example.demo.payload.JobResponse;
 import com.example.demo.payload.UpdateJobRequest;
+import com.example.demo.repository.JobApplicationRepository;
 import com.example.demo.repository.JobRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.security.JwtUtil;
@@ -22,10 +26,12 @@ public class JobController {
 
     private final JobRepository jobRepository;
     private final UserRepository userRepository;
+    private final JobApplicationRepository jobApplicationRepository;
 
-    public JobController(JobRepository jobRepository, UserRepository userRepository) {
+    public JobController(JobRepository jobRepository, UserRepository userRepository, JobApplicationRepository jobApplicationRepository) {
         this.jobRepository = jobRepository;
         this.userRepository = userRepository;
+        this.jobApplicationRepository = jobApplicationRepository;
     }
     @GetMapping("/jobs")
     public List<JobResponse> getAllJobs() {
@@ -144,6 +150,95 @@ public class JobController {
         jobRepository.save(job);
         return ResponseEntity.ok("Job updated successfully.");
     }
+    @PostMapping("/jobs/{id}/apply")
+    public ResponseEntity<?> applyToJob(
+            @PathVariable Long id,
+            @RequestBody ApplyRequest request,
+            HttpServletRequest httpRequest
+    ) {
+        User candidate = extractUserFromToken(httpRequest);
 
+        if (!"candidate".equalsIgnoreCase(candidate.getRole())) {
+            return ResponseEntity.status(403).body("Only candidates can apply to jobs.");
+        }
+
+        JobPosting job = jobRepository.findById(id).orElse(null);
+        if (job == null) {
+            return ResponseEntity.status(404).body("Job not found.");
+        }
+
+        JobApplication application = new JobApplication(
+            request.getMessage(),
+            request.getResumeLink(),
+            candidate,
+            job
+        );
+
+        jobApplicationRepository.save(application);
+        return ResponseEntity.ok("Application submitted successfully.");
+    }
+
+    @GetMapping("/jobs/{jobId}/applied")
+    public ResponseEntity<?> hasUserAppliedToJob(@PathVariable Long jobId, HttpServletRequest request) {
+        User user = extractUserFromToken(request);
+        System.out.println("Candidate ID: " + user.getId());
+        System.out.println("Job ID: " + jobId);
+
+        if (!"candidate".equalsIgnoreCase(user.getRole())) {
+            return ResponseEntity.status(403).body("Only candidates can check this.");
+        }
+    
+        boolean applied = jobApplicationRepository.existsByCandidateIdAndJobId(user.getId(), jobId);
+    
+        return ResponseEntity.ok(applied);
+    }
+    
+    @GetMapping("/user/applications")
+    public ResponseEntity<?> getUserApplications(HttpServletRequest request) {
+        User user = extractUserFromToken(request);
+
+        if (!"candidate".equalsIgnoreCase(user.getRole())) {
+            return ResponseEntity.status(403).body("Only candidates can view their applications.");
+        }
+
+        List<JobApplication> applications = jobApplicationRepository.findByCandidateId(user.getId());
+
+        List<JobApplicationResponse> response = applications.stream().map(app ->
+            new JobApplicationResponse(
+                app.getId(),
+                app.getJob().getTitle(),
+                app.getJob().getEmployer().getFullname(),
+                app.getMessage(),
+                app.getResumeLink(),
+                app.getAppliedAt()
+            )
+        ).toList();
+
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/employer/applications")
+    public ResponseEntity<?> getApplicationsForEmployerJobs(HttpServletRequest request) {
+        User employer = extractUserFromToken(request);
+
+        if (!"employer".equalsIgnoreCase(employer.getRole())) {
+            return ResponseEntity.status(403).body("Only employers can view applications.");
+        }
+
+        List<JobApplication> applications = jobApplicationRepository.findByJob_EmployerId(employer.getId());
+
+        List<JobApplicationResponse> response = applications.stream().map(app ->
+            new JobApplicationResponse(
+                app.getId(),
+                app.getJob().getTitle(),
+                app.getJob().getEmployer().getFullname(),
+                app.getMessage(),
+                app.getResumeLink(),
+                app.getAppliedAt()
+            )
+        ).toList();
+
+        return ResponseEntity.ok(response);
+    }
 
 }
